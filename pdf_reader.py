@@ -8,6 +8,12 @@ from  pdfid_v0_2_8 import pdfid
 from  xml.dom import minidom
 import xmltodict
 import pickle
+import os
+from  pdf_parser_V0_7_8 import pdf_parser
+import xmltodict
+import json
+import subprocess
+
 
 app = Flask(__name__)
 
@@ -24,13 +30,11 @@ def upload():
         print(pdf_name)
         save_path = os.path.join(pdf_name) 
         pdf_file.save(save_path)
-        with open("pdf_checker_RT",'rb') as f:
-            model = pickle.load(f)
+
             
         result = pdfid.PDFiD(pdf_name)
         data_dict = pdfid.PDFiD2JSON(result,True)
         json_dict = json.loads(data_dict)
-        print(json_dict[0]["pdfid"]["keywords"]["keyword"])
         data_list = json_dict[0]["pdfid"]["keywords"]["keyword"]
         data_dict_master = {}
         for data in data_list:
@@ -40,25 +44,31 @@ def upload():
 
         df = pd.DataFrame.from_dict(data_dict_master)
 
-        df_filter = df[["Encrypt","stream","obj","startxref","JBIG2Decode","AcroForm","JavaScript","JS","OpenAction","RichMedia","Launch","EmbeddedFile","XFA","AA"]]
+        df_input = df[["Encrypt","stream","obj","ObjStm","startxref","JBIG2Decode","AcroForm","JavaScript","JS","OpenAction","RichMedia","Launch","EmbeddedFile","XFA","AA"]]
 
-        df_filter.rename(columns = {'Encrypt':'encrypt','JavaScript':'Javascript_coded','JBIG2Decode':'JBIG2Decode_coded','AcroForm':'Acroform_coded','obj':'obj_coded','startxref':'startxref_coded','JS':'JS_coded','OpenAction':'OpenAction_coded','RichMedia':'RichMedia_coded','Launch':'launch_coded','EmbeddedFile':'EmbeddedFile_coded','AA':'AA_coded','XFA':'XFA_coded'}, inplace = True) 
-        df_filter["encrypt"] = df_filter["encrypt"].astype(float)
-        df_filter["stream"] = df_filter["stream"].astype(float)
-        df_filter["startxref_coded"] = df_filter["startxref_coded"].astype("int8")
-        df_filter["Javascript_coded"] = df_filter["Javascript_coded"].astype("int8")
-        df_filter["JS_coded"] = df_filter["JS_coded"].astype("int8")
-        df_filter["OpenAction_coded"] = df_filter["OpenAction_coded"].astype("int8")
-        df_filter["RichMedia_coded"] = df_filter["RichMedia_coded"].astype("int8")
-        df_filter["launch_coded"] = df_filter["launch_coded"].astype("int8")
-        df_filter["EmbeddedFile_coded"] = df_filter["EmbeddedFile_coded"].astype("int8")
-        df_filter["AA_coded"] = df_filter["AA_coded"].astype("int8")
-        df_filter["XFA_coded"] = df_filter["XFA_coded"].astype("int8")
-        df_filter["JBIG2Decode_coded"] = df_filter["JBIG2Decode_coded"].astype("int8")
-        df_filter["Acroform_coded"] = df_filter["Acroform_coded"].astype("int8")
+        df_input.rename(columns = {'Encrypt':'encrypt','JavaScript':'Javascript','AcroForm':'Acroform','Launch':'launch'}, inplace = True)
 
+        feature_list = ["xref","obj","ObjStm","startxref","JBIG2Decode","Acroform","Javascript","JS","OpenAction","RichMedia","launch","EmbeddedFile","XFA","AA"]
+
+
+        for feature_name in feature_list:
+            test_feature_name = feature_name + "_coded"
+        
+            with open("Models/" + test_feature_name,'rb') as f:
+                model = pickle.load(f)
+            try:
+                df_input[test_feature_name] = model.transform( [str(df_input[feature_name][0])] )
+            except Exception as e:
+                list(model.classes_)
+                #print(e)
+                continue
+
+        df_input_predict = df_input[['encrypt','stream','obj_coded','ObjStm_coded','startxref_coded','JBIG2Decode_coded','Acroform_coded','Javascript_coded', 'JS_coded','OpenAction_coded','RichMedia_coded','launch_coded','EmbeddedFile_coded','XFA_coded','AA_coded']]
+
+        with open("Models/pdf_checker_RT",'rb') as f:
+            model = pickle.load(f)
             
-        result = model.predict(df_filter)
+        result = model.predict(df_input_predict)
         print(str(result[0]))
         if (result[0] == 0):
             return "valid"
@@ -72,7 +82,7 @@ def upload():
         app.logger.info("error occurred")
         return "Fail"
 if __name__ == "__main__":
-    app.run(port="5000")
+    app.run(port="5001")
     
     
     
